@@ -10,17 +10,29 @@ class Art_Bot:
 
 # -------> Предварительные параметры для запуска
     def __init__(self, token):
+        
+        # <-------------------------
         self.token = token
         self.bot = TeleBot(self.token)
         
+        # <-------------------------
         self.this_directory = os.getcwd() + '\\bot_script'
         
         # <-------------------------
+        # data_path = self.this_directory + '\\data'
         
-        storage_path = self.this_directory + '\\photo_storage'
-        check_storage = os.path.exists(storage_path)
+        # if not os.path.exists(data_path):
+        #     os.mkdir(storage_path)
         
-        if not check_storage:
+        # <-------------------------
+        self.models = self.this_directory + '\\data\\models'
+        # self.model = style.load_model(self.models)
+        
+        # <-------------------------
+        
+        storage_path = self.this_directory + '\\data\\photo_storage'
+                
+        if not os.path.exists(storage_path):
             os.mkdir(storage_path)
     
         self.storage = storage_path
@@ -47,20 +59,18 @@ class Art_Bot:
         # <------ Функция приветствия при команде /start
         @self.bot.message_handler(commands=['start'])
         def handle_start(message):
-            user_id = message.from_user.id
+            user_id = str(message.from_user.id)
+            print(self.json_stages)
             
-            if user_id not in self.json_stages:
-                self.json_stages[user_id] = {
-                                            'state' : 'welcome',
-                                            'selfie' : None,
-                                            'painting' : None
-                                            }
-                
+            self.json_stages[user_id] = {
+                                        'state' : 'welcome',
+                                        'selfie' : None,
+                                        'painting' : None
+                                        }
+            
+            if user_id not in self.json_stages:    
                 os.chdir(self.storage)
                 os.mkdir(str(user_id))
-            
-            else:
-                self.json_stages[user_id]['state'] = 'welcome'
             
             with open(self.stages_dict, 'w') as outfile:
                 json.dump(self.json_stages, outfile)
@@ -70,7 +80,7 @@ class Art_Bot:
         # <------ Функция принятия команды для готовности скачать изображение
         @self.bot.message_handler(content_types=['text'])
         def handle_text(message):
-            user_id = message.from_user.id
+            user_id = str(message.from_user.id)
             
             if user_id not in self.json_stages:
                 self.bot.send_message(user_id, 'Пожалуйста, нажми /start! Без этого я не смогу начать с тобой диалог!')
@@ -90,6 +100,7 @@ class Art_Bot:
                     (message.text == 'Хочу переснять' and self.json_stages[user_id]['state'] == 'sent_selfie')):
                     
                     self.json_stages[user_id]['state'] = 'selfie'
+                    self.json_stages[user_id]['painting'] = 'sent'
                     
                     with open(self.stages_dict, 'w') as outfile:
                         json.dump(self.json_stages, outfile)
@@ -98,19 +109,20 @@ class Art_Bot:
                     
                 elif (message.text == 'Да, всё окей' and self.json_stages[user_id]['state'] == 'sent_selfie'):
                     self.json_stages[user_id]['state'] = 'both_sent'
+                    self.json_stages[user_id]['selfie'] = 'sent'
                     
                     with open(self.stages_dict, 'w') as outfile:
                         json.dump(self.json_stages, outfile)
-                        
-                    self.bot.send_message(user_id, 'Отлично, начинаю обработку!')
 
+                    self.bot.send_message(user_id, 'Отлично, начинаю обработку!')
+                    
         # <------ Функция проверки фото и загрузки
         @self.bot.message_handler(content_types=['photo'])
         def scan_message(message):
-            user_id = message.from_user.id
-            
-            check_photo(user_id, self.json_stages, message, self.bot, self.storage)
-                
+            user_id = str(message.from_user.id)
+
+            check_photo(self, user_id, message)
+        
         # <------ Вспомогательные функции для отправки сообщений
 
         def welcome(bot, ident):
@@ -119,16 +131,20 @@ class Art_Bot:
 
             bot.send_message(ident, 'Привет-привет, ты кто?', reply_markup=user_markup)
         
-        def check_photo(ident, list_stages, msg, bot, storage):
-            if msg.photo and (list_stages[ident]['state'] == 'painting' or 'selfie'):
-                file_info = bot.get_file(msg.photo[0].file_id)
-                download_file = bot.download_file(file_info.file_path)
+        def check_photo(self, ident, msg):
+            if msg.photo and (self.json_stages[ident]['state'] == 'painting' or self.json_stages[ident]['state'] == 'selfie' or 
+                            self.json_stages[ident]['state'] == 'retaking_painting' or self.json_stages[ident]['state'] == 'retaking_selfe'):
+                                
+                file_info = self.bot.get_file(msg.photo[0].file_id)
+                download_file = self.bot.download_file(file_info.file_path)
                 
-                source_file = storage + '\\' + str(ident) + '\\' + str(ident) + '_' + list_stages[ident]['state'] + '.' + file_info.file_path.split('.')[-1]
+                source_file = self.storage + '\\' + str(ident) + '\\' + str(ident) + '_' + self.json_stages[ident]['state'] + '.' + file_info.file_path.split('.')[-1]
                 with open(source_file, 'wb') as new_file:
                     new_file.write(download_file)
-                    
-                list_stages[ident]['state'] == 'sent_' + list_stages[ident]['state']
+                
+                new_state = 'sent_' + self.json_stages[ident]['state']
+                print(new_state)
+                self.json_stages[ident]['state'] = new_state
                 
                 with open(self.stages_dict, 'w') as outfile:
                     json.dump(self.json_stages, outfile)
@@ -137,7 +153,7 @@ class Art_Bot:
                 user_markup.row('Да, всё окей')
                 user_markup.row('Хочу переснять')
 
-                bot.send_message(ident, 'Нормуль получилось или хочешь переснять?', reply_markup=user_markup)
-        
+                self.bot.send_message(ident, 'Нормуль получилось или хочешь переснять?', reply_markup=user_markup)
+
         self.bot.infinity_polling(none_stop=True, interval=0)
         
